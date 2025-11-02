@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WinGo 30S REAL TIME WIN</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    .dot-green { @apply w-3 h-3 rounded-full bg-green-500; }
+    .dot-red   { @apply w-3 h-3 rounded-full bg-red-500; }
+    .dot-violet{ @apply w-3 h-3 rounded-full bg-purple-500; }
+    .color-dots span { @apply inline-block; }
+  </style>
+</head>
+<body class="bg-gradient-to-b from-pink-50 to-white min-h-screen font-sans">
+
+  <!-- Header -->
+  <header class="bg-white shadow-sm p-4 sticky top-0 z-10">
+    <div class="max-w-lg mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold text-pink-600">WinGo 30S</h1>
+      
+        <div class="text-lg font-semibold text-gray-800">
+          Period: <span id="coming-period-number">-</span>
+          <span id="countdown" class="ml-2 font-mono text-pink-600"></span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-lg mx-auto p-4 space-y-4">
+
+    <!-- Color Buttons -->
+    
+
+    <!-- Big / Small -->
+    <div class="grid grid-cols-2 gap-2">
+      <button class="bg-gradient-to-r from-orange-400 to-orange-500 text-white font-bold py-4 rounded-lg shadow-md flex flex-col items-center">
+        <span class="text-xl">WIN</span>
+        <span class="text-sm">0</span>
+      </button>
+      <button class="bg-gradient-to-r from-blue-400 to-blue-500 text-white font-bold py-4 rounded-lg shadow-md flex flex-col items-center">
+        <span class="text-xl">LOSS</span>
+        <span class="text-sm">0</span>
+      </button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex border-b border-gray-200">
+      <button id="tab-history" class="flex-1 py-3 text-pink-600 border-b-2 border-pink-600 font-medium text-sm">Game History</button>
+      <button id="tab-chart"   class="flex-1 py-3 text-gray-500 font-medium text-sm">Chart</button>
+      <button id="tab-my"      class="flex-1 py-3 text-gray-500 font-medium text-sm">My History</button>
+    </div>
+
+    <!-- History Table -->
+    <div id="history-content">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-600 text-left text-xs uppercase font-medium">
+            <tr>
+              <th class="px-2 py-2">Period</th>
+              <th class="px-2 py-2 text-center">Number</th>
+              <th class="px-2 py-2 text-center">Big/Small</th>
+              <th class="px-2 py-2 text-center">Color</th>
+            </tr>
+          </thead>
+          <tbody id="history-table-body" class="divide-y divide-gray-200">
+            <!-- rows injected here -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="flex justify-between items-center mt-4 text-sm">
+        <button id="prev-page" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-1">
+          <i class="fas fa-chevron-left"></i> Prev
+        </button>
+        <span id="page-info" class="text-gray-600">1/1</span>
+        <button id="next-page" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-1">
+          Next <i class="fas fa-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Chart placeholder -->
+    <div id="chart-content" class="hidden text-center py-10 text-gray-500">
+      Chart coming soon…
+    </div>
+
+    <!-- My History placeholder -->
+    <div id="my-history-content" class="hidden text-center py-10 text-gray-500">
+      Your bets will appear here.
+    </div>
+
+  </main>
+
+  <script>
+    /* ==================== CONFIG ==================== */
+    const HISTORY_DISPLAY_COUNT = 10;          // how many rows in the table
+    const PERIOD_SLICE_LENGTH   = 5;           // last N digits of period
+    const API_CURRENT_ISSUE     = 'https://api.bdg88zf.com/api/webapi/GetGameIssue';
+    const API_PREV_RESULTS      = 'https://api.bdg88zf.com/api/webapi/GetNoaverageEmerdList';
+    const KV_URL                = 'https://h5pages.ar-lottery02.com/webapi/kv/issue/WinGo_30S';
+
+    /* ==================== STATE ==================== */
+    let allData     = [];       // full list from GetNoaverageEmerdList
+    let currentPage = 1;
+    const itemsPerPage = HISTORY_DISPLAY_COUNT;
+
+    /* ==================== DOM ==================== */
+    const periodEl          = document.getElementById('period-number');
+    const comingPeriodEl    = document.getElementById('coming-period-number');
+    const countdownEl       = document.getElementById('countdown');
+    const tableBody         = document.getElementById('history-table-body');
+    const pageInfo          = document.getElementById('page-info');
+    const prevBtn           = document.getElementById('prev-page');
+    const nextBtn           = document.getElementById('next-page');
+
+    const tabHistory        = document.getElementById('tab-history');
+    const tabChart          = document.getElementById('tab-chart');
+    const tabMy             = document.getElementById('tab-my');
+    const historyContent    = document.getElementById('history-content');
+    const chartContent      = document.getElementById('chart-content');
+    const myHistoryContent  = document.getElementById('my-history-content');
+
+    /* ==================== HELPERS ==================== */
+    const formatPeriod = p => (p ? p.slice(-PERIOD_SLICE_LENGTH) : '-');
+
+    const getColorList = n => {
+      const list = [];
+      if (n === 0 || n === 5) list.push(3);               // violet
+      if (n !== 0 && n % 2 === 0) list.push(1);          // green
+      if (n % 2 === 1) list.push(2);                     // red
+      return list;
+    };
+
+    const msToLocal = ms => {
+      try { return new Date(ms).toLocaleString(); }
+      catch { return '-'; }
+    };
+
+    /* ==================== API CALLS ==================== */
+    async function fetchPrevResults() {
+      try {
+        const res = await fetch(`${API_PREV_RESULTS}?pageSize=${HISTORY_DISPLAY_COUNT * 5}&pageNo=1`);
+        const json = await res.json();
+        if (json.code !== 0) throw new Error('Bad response');
+        allData = (json.data || []).map(it => ({
+          issueNumber: it.issueNumber || it.issue || '',
+          number:      parseInt(it.lotteryResult) || 0,
+          colorList:   getColorList(parseInt(it.lotteryResult) || 0)
+        }));
+        updateCurrentPeriod();
+        renderTable();
+      } catch (e) {
+        console.error('PrevResults error:', e);
+        tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-red-500">Load error</td></tr>`;
+      }
+    }
+
+    async function fetchCurrentIssue() {
+      try {
+        const res = await fetch(API_CURRENT_ISSUE);
+        const json = await res.json();
+        if (json.code !== 0) throw new Error('Bad response');
+        const d = json.data;
+        periodEl.textContent = d.issueNumber || '-';
+      } catch (e) {
+        console.error('CurrentIssue error:', e);
+        periodEl.textContent = 'Error';
+      }
+    }
+
+    async function fetchKV() {
+      try {
+        const res = await fetch(KV_URL);
+        const json = await res.json();
+        if (json.code !== 0) throw new Error('Bad KV');
+        const d = json.data;
+        comingPeriodEl.textContent = d.issueNumber || '-';
+        startCountdown(d.countdown);
+        // optional extra info
+        // document.getElementById('coming-start').textContent = msToLocal(d.startTime);
+        // document.getElementById('coming-end').textContent   = msToLocal(d.endTime);
+      } catch (e) {
+        console.error('KV error:', e);
+        comingPeriodEl.textContent = 'Error';
+        countdownEl.textContent = '';
+      }
+    }
+
+    /* ==================== COUNTDOWN ==================== */
+    function startCountdown(seconds) {
+      let left = seconds;
+      const timer = setInterval(() => {
+        const m = Math.floor(left / 60).toString().padStart(2, '0');
+        const s = (left % 60).toString().padStart(2, '0');
+        countdownEl.textContent = `${m}:${s}`;
+        if (left <= 0) {
+          clearInterval(timer);
+          // new round → refresh everything
+          fetchPrevResults();
+          fetchCurrentIssue();
+          fetchKV();
+        }
+        left--;
+      }, 1000);
+    }
+
+    /* ==================== RENDER ==================== */
+    function updateCurrentPeriod() {
+      if (allData.length) periodEl.textContent = allData[0].issueNumber;
+    }
+
+    function renderTable() {
+      const start = (currentPage - 1) * itemsPerPage;
+      const end   = start + itemsPerPage;
+      const page  = allData.slice(start, end);
+
+      tableBody.innerHTML = '';
+      page.forEach(it => {
+        const colors = it.colorList.map(c =>
+          c === 1 ? '<span class="dot-green"></span>' :
+          c === 2 ? '<span class="dot-red"></span>' :
+                    '<span class="dot-violet"></span>'
+        ).join('');
+
+        const bigSmall = it.number >= 5 ? 'Big' : 'Small';
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+        tr.innerHTML = `
+          <td class="px-2 py-3 text-xs text-gray-600">${formatPeriod(it.issueNumber)}</td>
+          <td class="px-2 py-3 text-center font-bold text-lg ${it.number===0?'text-red-600':it.number===5?'text-purple-600':''}">${it.number}</td>
+          <td class="px-2 py-3 text-center text-xs">${bigSmall}</td>
+          <td class="px-2 py-3 text-center"><div class="color-dots flex justify-center gap-1">${colors}</div></td>
+        `;
+        tableBody.appendChild(tr);
+      });
+
+      const totalPages = Math.ceil(allData.length / itemsPerPage) || 1;
+      pageInfo.textContent = `${currentPage}/${totalPages}`;
+      prevBtn.disabled = currentPage === 1;
+      nextBtn.disabled = currentPage === totalPages;
+    }
+
+    /* ==================== PAGINATION ==================== */
+    prevBtn.addEventListener('click', () => {
+      if (currentPage > 1) { currentPage--; renderTable(); }
+    });
+    nextBtn.addEventListener('click', () => {
+      if (currentPage < Math.ceil(allData.length / itemsPerPage)) { currentPage++; renderTable(); }
+    });
+
+    /* ==================== TABS ==================== */
+    function setActiveTab(which) {
+      [historyContent, chartContent, myHistoryContent].forEach(el => el.classList.add('hidden'));
+      [tabHistory, tabChart, tabMy].forEach(el => {
+        el.classList.remove('text-pink-600', 'border-pink-600');
+        el.classList.add('text-gray-500');
+      });
+
+      if (which === 'history') { historyContent.classList.remove('hidden'); tabHistory.classList.add('text-pink-600','border-pink-600'); }
+      if (which === 'chart')   { chartContent.classList.remove('hidden');   tabChart.classList.add('text-pink-600','border-pink-600'); }
+      if (which === 'my')      { myHistoryContent.classList.remove('hidden'); myHistoryContent.classList.add('text-pink-600','border-pink-600'); }
+    }
+    tabHistory.addEventListener('click', () => setActiveTab('history'));
+    tabChart.addEventListener('click',   () => setActiveTab('chart'));
+    tabMy.addEventListener('click',      () => setActiveTab('my'));
+
+    /* ==================== INIT ==================== */
+    fetchPrevResults();   // initial history
+    fetchCurrentIssue();  // current period
+    fetchKV();            // coming period + countdown
+
+    setInterval(fetchPrevResults, 30000); // history refresh
+    setInterval(fetchKV,        5000);    // countdown refresh
+  </script>
+</body>
+</html>
